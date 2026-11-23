@@ -13,8 +13,12 @@
 /**************************************************************************/
 
 
-/* When the number after #if set as 1, it will be switch to SPI Mode*/
-#if 0
+// Interface: 1 = HSU (UART on Serial1), 2 = I2C (Wire), 3 = SPI (SS on pin 10).
+// Change the number here, or build with -DPN532_INTERFACE=2.
+#ifndef PN532_INTERFACE
+#define PN532_INTERFACE 1
+#endif
+#if PN532_INTERFACE == 3
   #include <SPI.h>
   #include <PN532_SPI.h>
   #include "PN532.h"
@@ -22,16 +26,14 @@
   PN532_SPI pn532spi(SPI, 10);
   PN532 nfc(pn532spi);
 
-/* When the number after #elif set as 1, it will be switch to HSU Mode*/
-#elif 1
+#elif PN532_INTERFACE == 1
   #include <PN532_HSU.h>
   #include <PN532.h>
       
   PN532_HSU pn532hsu(Serial1);
   PN532 nfc(pn532hsu);
 
-/* When the number after #if & #elif set as 0, it will be switch to I2C Mode*/
-#else 
+#else
   #include <Wire.h>
   #include <PN532_I2C.h>
   #include <PN532.h>

@@ -16,6 +16,18 @@ None of these are in the Arduino Library Manager. The `PN532` library used here 
 
 Without step 2 for `NDEF` the NDEF examples fail with a missing `NfcAdapter.h`. As an alternative to copying it, point the build at the downloaded copy: `--library /path/to/PN532-PN532_HSU/NDEF` (that is what the commands in this README do on this machine, where `NDEF` is not installed in the sketchbook).
 
+## Choosing the interface (HSU, I2C or SPI)
+
+Every sketch starts with one setting:
+
+```
+#ifndef PN532_INTERFACE
+#define PN532_INTERFACE 1     // 1 = HSU (Serial1), 2 = I2C (Wire), 3 = SPI (SS on pin 10)
+#endif
+```
+
+Change the number, or override it at build time: `arduino-cli compile ... --build-property "compiler.cpp.extra_flags=-DPN532_INTERFACE=2" <sketch>`. HSU is the default and the only interface tested on hardware so far. All 18 sketches compile with HSU and with I2C on the Feather RP2350 HSTX and the Nano Matter (72 builds). The SPI branch does not compile with the current `PN532_SPI` library on either board: it calls `setDataMode`, `setBitOrder` and `setClockDivider`, which the SPI classes of these cores no longer have. SPI would also need header pins soldered to the module, so it is on hold. The module's switches must match the chosen interface (HSU: both OFF, I2C: ch1 ON and ch2 OFF), and it needs a full USB replug after any change.
+
 ## HSU mode on Adafruit Feather RP2350 HSTX (verified)
 
 Reads an NTAG-type tag, a Mifare Classic 1K card and a Mifare Classic 1K key fob.
@@ -96,7 +108,7 @@ arduino-cli upload  -b rp2040:rp2040:adafruit_feather_rp2350_hstx \
 | WriteTag on NTAG | Verified (NFC Forum Type 2 tag: wrote `http://arduino.cc`, then restored the Zephyr records with `ndef_examples/RestoreZephyr`) |
 | CleanTag | Verified on the card (back to factory keys; ReadTag shows "not NDEF formatted" again) |
 
-The Seeed `PN532` library examples are copied to [seeed_examples/](seeed_examples/) with HSU selected, and all compile for the Feather. Build with `--library /path/to/PN532-PN532_HSU/NDEF` (needed by `emulate_tag_ndef` and `p2p_with_ndef_library`). Not copied: `android_hce` and the two FeliCa examples (no Android app or FeliCa card in hand). Edits: `p2p_raw` and `p2p_with_ndef_library` rewritten from `PN532_SPI` to `PN532_HSU(Serial1)`. Run on hardware (Feather and Nano Matter): `iso14443a_uid`, `p2p_raw`, `p2p_with_ndef_library` (send only) and `emulate_tag_ndef`. Compile-tested only, not run: `mifareclassic_formatndef`, `mifareclassic_memdump`, `mifareclassic_ndeftoclassic`, `mifareclassic_updatendef` and `readMifare` (the NDEF examples in `ndef_examples/` cover the same ground and were run). `emulate_tag_ndef` and the `p2p_*` examples need an NFC phone or a second NFC device.
+The Seeed `PN532` library examples are copied to [seeed_examples/](seeed_examples/) with HSU selected, and all compile for the Feather. Build with `--library /path/to/PN532-PN532_HSU/NDEF` (needed by `emulate_tag_ndef` and `p2p_with_ndef_library`). Not copied: `android_hce` and the two FeliCa examples (no Android app or FeliCa card in hand). Edits: `p2p_raw` and `p2p_with_ndef_library` rewritten from `PN532_SPI` to `PN532_HSU(Serial1)`. Run on hardware: `iso14443a_uid` and `p2p_raw` (Feather and Nano Matter), `p2p_with_ndef_library` (send only) and `emulate_tag_ndef` (Nano Matter only). Compile-tested only, not run: `mifareclassic_formatndef`, `mifareclassic_memdump`, `mifareclassic_ndeftoclassic`, `mifareclassic_updatendef` and `readMifare` (the NDEF examples in `ndef_examples/` cover the same ground and were run). `emulate_tag_ndef` and the `p2p_*` examples need an NFC phone or a second NFC device.
 
 **Tag types in hand**
 - NTAG-type, NFC Forum Type 2, UID `04 64 31 66 D3 2A 81`: holds 2 records (text `hello from zephyr`, URI `https://zephyrproject.org`).
