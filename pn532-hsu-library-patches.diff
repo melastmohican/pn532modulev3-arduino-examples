@@ -1,0 +1,64 @@
+--- a/PN532/PN532Interface.h
++++ b/PN532/PN532Interface.h
+@@ -13,7 +13,7 @@
+ #define PN532_HOSTTOPN532             (0xD4)
+ #define PN532_PN532TOHOST             (0xD5)
+ 
+-#define PN532_ACK_WAIT_TIME           (10)  // ms, timeout of waiting for ACK
++#define PN532_ACK_WAIT_TIME           (1000)  // ms, timeout of waiting for ACK
+ 
+ #define PN532_INVALID_ACK             (-1)
+ #define PN532_TIMEOUT                 (-2)
+--- a/PN532_HSU/PN532_HSU.cpp
++++ b/PN532_HSU/PN532_HSU.cpp
+@@ -18,9 +18,11 @@
+ {
+     _serial->write(0x55);
+     _serial->write(0x55);
+-    _serial->write(0);
+-    _serial->write(0);
+-    _serial->write(0);
++    for (int i = 0; i < 14; i++) {
++        _serial->write((uint8_t)0);
++    }
++    _serial->flush();
++    delay(50);
+ 
+     /** dump serial buffer */
+     if(_serial->available()){
+@@ -47,15 +49,21 @@
+ 
+     command = header[0];
+     
+-    _serial->write(PN532_PREAMBLE);
+-    _serial->write(PN532_STARTCODE1);
+-    _serial->write(PN532_STARTCODE2);
++    _serial->write(0x55);
++    _serial->write(0x55);
++    for (int i = 0; i < 14; i++) {
++        _serial->write((uint8_t)0);
++    }
+     
++    _serial->write((uint8_t)PN532_PREAMBLE);
++    _serial->write((uint8_t)PN532_STARTCODE1);
++    _serial->write((uint8_t)PN532_STARTCODE2);
++    
+     uint8_t length = hlen + blen + 1;   // length of data field: TFI + DATA
+     _serial->write(length);
+     _serial->write(~length + 1);         // checksum of length
+     
+-    _serial->write(PN532_HOSTTOPN532);
++    _serial->write((uint8_t)PN532_HOSTTOPN532);
+     uint8_t sum = PN532_HOSTTOPN532;    // sum of TFI + DATA
+ 
+     DMSG("\nWrite: ");
+@@ -76,7 +84,8 @@
+     
+     uint8_t checksum = ~sum + 1;            // checksum of TFI + DATA
+     _serial->write(checksum);
+-    _serial->write(PN532_POSTAMBLE);
++    _serial->write((uint8_t)PN532_POSTAMBLE);
++    _serial->flush();
+ 
+     return readAckFrame();
+ }
