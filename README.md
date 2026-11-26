@@ -13,6 +13,7 @@ None of these are in the Arduino Library Manager. The `PN532` library used here 
    ```
    It changes `PN532_HSU/PN532_HSU.cpp` only; add `--dry-run` first to check. Details are in the "Library patch" section below.
 4. Check: `arduino-cli compile -b <fqbn> seeed_examples/iso14443a_uid` should build.
+5. Only for the sketches in `Adafruit-PN532/`: install `Adafruit PN532` from the Arduino Library Manager (version 1.3.4 was tested; it pulls in `Adafruit BusIO`). Nothing else in this repo needs it.
 
 Without step 2 for `NDEF` the NDEF examples fail with a missing `NfcAdapter.h`. As an alternative to copying it, point the build at the downloaded copy: `--library /path/to/PN532-PN532_HSU/NDEF` (that is what the commands in this README do on this machine, where `NDEF` is not installed in the sketchbook).
 
@@ -26,7 +27,7 @@ Every sketch starts with one setting:
 #endif
 ```
 
-Change the number, or override it at build time: `arduino-cli compile ... --build-property "compiler.cpp.extra_flags=-DPN532_INTERFACE=2" <sketch>`. HSU is the default and the only interface tested on hardware so far. All 18 sketches compile with HSU and with I2C on the Feather RP2350 HSTX and the Nano Matter (72 builds). The SPI branch does not compile with the current `PN532_SPI` library on either board: it calls `setDataMode`, `setBitOrder` and `setClockDivider`, which the SPI classes of these cores no longer have. SPI would also need header pins soldered to the module, so it is on hold. The module's switches must match the chosen interface (HSU: both OFF, I2C: ch1 ON and ch2 OFF), and it needs a full USB replug after any change.
+On boards with a second I2C bus, `-DPN532_WIRE=Wire1` selects it (default `Wire`). Change the number, or override it at build time: `arduino-cli compile ... --build-property "compiler.cpp.extra_flags=-DPN532_INTERFACE=2" <sketch>`. HSU is the default. HSU and I2C are tested on hardware (see the table in "I2C mode" below); SPI is not. All 18 sketches compile with HSU and with I2C on the Feather RP2350 HSTX and the Nano Matter (72 builds). The SPI branch does not compile with the current `PN532_SPI` library on either board: it calls `setDataMode`, `setBitOrder` and `setClockDivider`, which the SPI classes of these cores no longer have. SPI would also need header pins soldered to the module, so it is on hold. The module's switches must match the chosen interface (HSU: both OFF, I2C: ch1 ON and ch2 OFF), and it needs a full USB replug after any change.
 
 ## HSU mode on Adafruit Feather RP2350 HSTX (verified)
 
@@ -84,7 +85,97 @@ Also verified on the Nano Matter, with no code changes:
 
 The NTAG (UID 04 64 31 66 D3 2A 81) and the blue fob only read at the right spot on the antenna: held loosely they were missed, then found by sweeping. The module's antenna is a loop on one part of the board, not under its centre, and small coils couple poorly with a few centimetres of offset.
 
-**Not working: Arduino Nano R4** (`arduino:renesas_uno:nanor4`, 5 V logic, same RA4M1 chip as the UNO R4). Silent ("Didn't find PN53x board") with the wiring that matches its pin table (module TXD to D0 = RX, RXD to D1 = TX, VCC 3V3), although a `Serial1` loopback on D0/D1 passes. Together with the UNO R4 this fits the 3.3 V against 5 V logic idea (the two 3.3 V boards work, the two 5 V boards do not), but it is unproven; a level shifter on the module's TXD to D0 is the untested fix. Note that `Serial1` is TX = D0 on the Nano Matter but TX = D1 on the Nano R4.
+**Not working: Arduino Nano R4** (`arduino:renesas_uno:nanor4`, 5 V logic, same RA4M1 chip as the UNO R4). Silent ("Didn't find PN53x board") with the wiring that matches its pin table (module TXD to D0 = RX, RXD to D1 = TX, VCC 3V3), although a `Serial1` loopback on D0/D1 passes. Together with the UNO R4 this fits the 3.3 V against 5 V logic idea (the two 3.3 V boards work, the two 5 V boards do not), but it is unproven; a level shifter on the module's TXD to D0 is the untested fix. I2C on the Nano R4's 3.3 V Qwiic port does work, see "I2C mode". Note that `Serial1` is TX = D0 on the Nano Matter but TX = D1 on the Nano R4.
+
+## Adafruit_PN532 library over HSU (verified on the Nano Matter and the Feather)
+
+The Adafruit library has a hardware UART constructor, `Adafruit_PN532(reset, HardwareSerial *)`. The sketch [Adafruit-PN532/iso14443a_hsu/](Adafruit-PN532/iso14443a_hsu/) uses it with `Serial1` and reads the white Mifare Classic card (UID `50 61 78 58`) on the Arduino Nano Matter and on the Adafruit Feather RP2350 HSTX (2026-11-23, `Adafruit_PN532` 1.3.4). Wiring and switches are the same as for the Seeed library on each board above (both switches OFF; Nano Matter TXD to D1, RXD to D0; Feather TXD to GPIO1, RXD to GPIO0; VCC 3V3).
+
+Two changes to Adafruit's `iso14443a_uid` example were needed, and the module does not answer without them:
+- `nfc.setPassiveActivationRetries(0x10)` instead of `0xFF`, as with the Seeed library.
+- Drain `Serial1` before each `readPassiveTargetID()`. In UART mode the library leaves one stray byte in the buffer after each response, so the next ACK is read one byte late (`00 FF 00 FF 00 00` instead of `00 00 FF 00 FF 00`) and every poll fails with "Timed out waiting for a card". Without the drain, only the first command after `begin()` works.
+
+```
+arduino-cli compile -b SiliconLabs:silabs:nano_matter Adafruit-PN532/iso14443a_hsu
+```
+
+## I2C mode (verified with the Seeed library on the Feather and the Nano Matter)
+
+**Switches:** ch1 ON, ch2 OFF. The module reads them at power-up, so unplug and replug its USB after any change. The I2C address is `0x24`.
+
+Use the module's **front** silkscreen for the I2C pads (`SDA`, `SCL`). The same pads are `TXD` and `RXD` on the back, so a wire read from the wrong side lands on the wrong pad.
+
+| Module pad | Qwiic cable color | Feather RP2350 HSTX | Nano Matter | Nano R4 (Qwiic port) |
+|---|---|---|---|---|
+| VCC | red (3.3 V) | 3V (3.3 V) | 3V3 | Qwiic |
+| GND | black | GND | GND | Qwiic |
+| SDA | blue | SDA (GPIO2) | A4 (PA6) | Qwiic (`Wire1`) |
+| SCL | yellow | SCL (GPIO3) | A5 (PA7) | Qwiic (`Wire1`) |
+
+The colors are the fixed Qwiic / STEMMA QT cable colors. A Qwiic-to-female cable puts the female ends on the module's header pins (red to VCC, black to GND, blue to SDA, yellow to SCL) and the Qwiic end in a board's Qwiic port; with a Qwiic-to-male cable, the loose male pins go onto the module pads or a breadboard the same way. Match the colors to the pad names on the module's front, not to pad positions. If a board has no Qwiic port, use jumper wires to the pins in the table.
+
+Build with `-DPN532_INTERFACE=2` and the `PN532_I2C` library copied into your sketchbook (see "Install the libraries"):
+
+```
+arduino-cli compile -b rp2040:rp2040:adafruit_feather_rp2350_hstx \
+  --build-property "compiler.cpp.extra_flags=-DPN532_INTERFACE=2" seeed_examples/iso14443a_uid
+```
+
+Results (2026-11-23):
+
+| Library | Board | HSU | I2C |
+|---|---|---|---|
+| Seeed `PN532` | Feather RP2350 HSTX | works | works: white card UID `50 61 78 58`, `ReadTag` read both NTAG records |
+| Seeed `PN532` | Nano Matter | works | works: white card UID `50 61 78 58` |
+| `Adafruit_PN532` 1.3.4 | Feather RP2350 HSTX | works | **does not work reliably** (see below) |
+| `Adafruit_PN532` 1.3.4 | Nano Matter | works | not tried |
+| Seeed `PN532` | Nano R4 | no answer | **works on the Qwiic port (`Wire1`, 3.3 V)**: white card UID `50 61 78 58`; not tried on `Wire` (A4/A5) |
+| Seeed `PN532` | UNO R4 WiFi | no answer | scan found nothing on `Wire` (A4/A5); Qwiic port not tried |
+| any | any | | SPI not tested (see "Choosing the interface") |
+
+**Peer-to-peer over I2C does not work (Feather, 2026-11-23).** `p2p_raw` built with `-DPN532_INTERFACE=2` never answers the M5 unit (`snep_receive.py` printed "no response from card" on every attempt, four tries, module power-cycled between them). The library trace on the Feather shows the `TgInitAsTarget` command ("become a target") never being ACKed over I2C. The same sketch over HSU, with the same M5 unit and placement, delivered `hello world` on attempt 9 the same day, so the I2C interface is the difference. Cause unknown; the Seeed LLCP and SNEP code may depend on timing the I2C path does not meet. Tag emulation (`emulate_tag_ndef`) over I2C was not tried. Reading tags (UID, NDEF `ReadTag`) works over I2C; use HSU for peer-to-peer.
+
+**Nano R4 over Qwiic.** Plug the module into the Nano R4's Qwiic connector with a Qwiic-to-header cable (black GND to GND, red 3.3 V to VCC, blue to SDA, yellow to SCL). `I2C_Scan` finds `0x24` on `Wire1` (the Qwiic bus) and nothing on `Wire`. The sketches use `Wire` by default, so build with `-DPN532_WIRE=Wire1`:
+
+```
+arduino-cli compile -b arduino:renesas_uno:nanor4 \
+  --build-property "compiler.cpp.extra_flags=-DPN532_INTERFACE=2 -DPN532_WIRE=Wire1" seeed_examples/iso14443a_uid
+```
+
+The Qwiic bus is 3.3 V logic, which fits the idea in the "Not working" notes that the R4's 5 V logic is what breaks HSU. That is consistent but still unproven: the R4's HSU stays silent, and I2C on the 5 V `Wire` (A4/A5) was not tried on the Nano R4.
+
+**`I2C_Scan` cannot be trusted on the Nano Matter.** Its core's `endTransmission()` returns success for every address, even on `Wire1` with nothing attached, so the scan lists all of 0x08 to 0x7F. On the Feather it works and prints `0x24`. To build it for the Feather use `--board-options usbstack=tinyusb,freq=120` (the Adafruit TestBed library requires TinyUSB and 120 or 240 MHz). With the Feather in BOOTSEL mode, upload to the `RP2350` drive (`-p /Volumes/RP2350`). On the Nano Matter, run `iso14443a_uid` instead.
+
+**A first Nano Matter wiring failed.** The library said "Didn't find PN53x board" and the board dropped off USB when the SDA wire was plugged in. Rewiring fixed it. The cause was not identified (most likely a wire on the wrong pad), so check each wire against the table.
+
+**Adafruit library over I2C on the Feather:**
+- The stock example's IRQ and RESET pins are 2 and 3, which are the Feather's SDA and SCL. Use two unused pins (for example `A0` and `A1`) as placeholders; nothing is wired to them.
+- `setPassiveActivationRetries(0xFF)` polls forever, use `0x10`, as with the other libraries.
+- On a freshly power-cycled module the library finds the chip ("Found chip PN532, Firmware ver. 1.6"), but the card poll then never returns, with the white card held. After a Feather reset without power-cycling the module, it fails already at the first command. A best guess, not proven: `begin()` pulses a hardware RESET pin to put the PN532 in a known state, and this module has no RESET wired, so a module left mid-command by the previous run ignores the next one. Use the Seeed library for I2C.
+- The module itself is fine. A raw probe from the Feather's `Wire` (GetFirmwareVersion, then the ready byte, then the ACK) works, and so does the module on an Adafruit FT232H with `pyftdi` (firmware 1.6, white card read).
+
+## Testing the module from a Mac with an FT232H (verified)
+
+[tools/pn532_ft232h.py](tools/pn532_ft232h.py) reads a card UID over I2C through an Adafruit FT232H and [pyftdi](https://eblot.github.io/pyftdi/), with no microcontroller and no Arduino library. It is a way to tell a module or wiring problem from a board or library problem: when an Arduino sketch cannot find the module, this takes the board out of the picture.
+
+**Switches:** ch1 ON, ch2 OFF (I2C), and unplug and replug the module's USB after any switch change. The script reports "module never ACKed the write" until you do.
+
+| Module pad | Qwiic cable color | FT232H |
+|---|---|---|
+| VCC | red (3.3 V) | 3V |
+| GND | black | GND |
+| SDA | blue | D1 and D2 tied together |
+| SCL | yellow | D0 |
+
+On an FT232H breakout with a Qwiic / STEMMA QT port, use a Qwiic cable between the module and that port (a Qwiic-to-female cable puts the female ends on the module's header pins). Otherwise use jumper wires as in the table. The M5 NFC unit can stay on the same bus: it is at `0x50`, the module at `0x24`.
+
+```
+uv run tools/pn532_ft232h.py 15      # poll for a card for 15 seconds
+```
+
+`uv` installs `pyftdi` on the fly. The script sends GetFirmwareVersion and SAMConfiguration, then polls InListPassiveTarget.
+
+Result (2026-11-23, macOS, Adafruit FT232H, 100 kHz): `PN532 firmware 1.6`, then `UID: 50 61 78 58` for the white Mifare Classic card. It worked on the first write, with none of the wake-up or ready-byte trouble the Adafruit Arduino library had on the Feather, which is part of how the module itself was cleared of blame.
 
 ## NDEF examples over HSU (verified on Feather RP2350 HSTX)
 
@@ -175,7 +266,7 @@ Notes
 
 ## Origins and licences
 
-The sketches in `seeed_examples/`, `ndef_examples/` and `Adafruit-PN532/` are modified copies of examples from the Seeed/Elechouse PN532 library, Don Coleman's NDEF library and Adafruit's Adafruit-PN532 library, all BSD 3-clause. Their notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The files written for this repository (`I2C_Scan/`, `mifare_auth_check/`, `ndef_examples/RestoreZephyr/`, this README and the patches) are under the BSD 3-clause licence in [LICENSE](LICENSE). The Elechouse manual and schematic PDFs are not included here; see the links under References.
+The sketches in `seeed_examples/`, `ndef_examples/` and `Adafruit-PN532/` are modified copies of examples from the Seeed/Elechouse PN532 library, Don Coleman's NDEF library and Adafruit's Adafruit-PN532 library, all BSD 3-clause. Their notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The files written for this repository (`I2C_Scan/`, `mifare_auth_check/`, `tools/`, `ndef_examples/RestoreZephyr/`, this README and the patches) are under the BSD 3-clause licence in [LICENSE](LICENSE). The Elechouse manual and schematic PDFs are not included here; see the links under References.
 
 ## References
 https://www.elechouse.com/product/pn532-nfc-rfid-module-v4/

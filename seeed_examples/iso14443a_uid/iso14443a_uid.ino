@@ -35,10 +35,13 @@
 
 #else
   #include <Wire.h>
+  #ifndef PN532_WIRE
+  #define PN532_WIRE Wire   // use -DPN532_WIRE=Wire1 for a second I2C bus (e.g. Qwiic on the Nano R4)
+  #endif
   #include <PN532_I2C.h>
   #include <PN532.h>
   
-  PN532_I2C pn532i2c(Wire);
+  PN532_I2C pn532i2c(PN532_WIRE);
   PN532 nfc(pn532i2c);
 #endif
   
